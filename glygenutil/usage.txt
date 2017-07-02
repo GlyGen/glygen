@@ -1,0 +1,16 @@
+﻿resolvutil.exe /command=<command> [options]
+
+Commands:
+	resolve
+	validate
+
+Options:
+	/if=<input CSV file>
+	/cas=<0-based CAS column number>
+	/name=<0-based chemical name column number>
+	/cutoff=<confidence cutoff>
+	/headers - first row is columns headers
+
+Examples:
+	# Take name and CAS data from columns 1 and 2 of Table_2–4.csv and convert to SDF and CSV files
+	resolvutil.exe /command=resolve /if=Table_2–4.csv /headers /cas=2 /name=1
