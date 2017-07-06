@@ -14,3 +14,8 @@ glygenutil/bin/
 glygenutil/obj/
 
 data/
+src/packages/
+src/GlyGenTests/bin/
+src/GlyGenTests/obj/
+src/glygenutil/bin/
+src/glygenutil/obj/
