@@ -44,6 +44,9 @@ namespace glygenutil
 		[Option('u', "url", Required = false, HelpText = "Endpoint URL")]
 		public string Url { get; set; }
 
+		[Option('e', "element", Required = false, HelpText = "Document-defining XML element")]
+		public string Element { get; set; }
+
 		[HelpOption]
 		public string GetUsage()
 		{
@@ -66,24 +69,26 @@ namespace glygenutil
 			}
 
 			switch ( opt.Command ) {
-				case "load-sdf-mongo":
-					loadSdfToMongo(opt.InputFile, opt.Url, opt.Database, opt.Collection);
-					break;
-				case "load-csv-mongo":
-					loadCsvToMongo(opt.InputFile, opt.Url, opt.Database, opt.Collection);
-					break;
-				case "load-xml-mongo":
-					loadXmlToMongo(opt.InputFile, opt.Url, opt.Database, opt.Collection);
+				case "load-mongo":
+					if ( Path.GetExtension(opt.InputFile).EqualsNoCase(".sdf") )
+						loadSdfToMongo(opt.InputFile, opt.Url, opt.Database, opt.Collection ?? Path.GetFileNameWithoutExtension(opt.InputFile));
+					else if ( Path.GetExtension(opt.InputFile).EqualsNoCase(".csv") )
+						loadCsvToMongo(opt.InputFile, opt.Url, opt.Database, opt.Collection ?? Path.GetFileNameWithoutExtension(opt.InputFile));
+					else if ( Path.GetExtension(opt.InputFile).EqualsNoCase(".xml") )
+						loadXmlToMongo(opt.InputFile, opt.Url, opt.Database, opt.Collection ?? Path.GetFileNameWithoutExtension(opt.InputFile), opt.Element);
+					else
+						throw new NotSupportedException("Not supported file format");
 					break;
 
-				case "load-sdf-elastic":
-					loadSdfToElastic(opt.InputFile, opt.Url, opt.Database, opt.Collection ?? Path.GetFileNameWithoutExtension(opt.InputFile));
-					break;
-				case "load-csv-elastic":
-					loadCsvToElastic(opt.InputFile, opt.Url, opt.Database, opt.Collection ?? Path.GetFileNameWithoutExtension(opt.InputFile));
-					break;
-				case "load-xml-elastic":
-					loadXmlToElastic(opt.InputFile, opt.Url, opt.Database, opt.Collection ?? Path.GetFileNameWithoutExtension(opt.InputFile));
+				case "load-elastic":
+					if ( Path.GetExtension(opt.InputFile).EqualsNoCase(".sdf") )
+						loadSdfToElastic(opt.InputFile, opt.Url, opt.Database, opt.Collection ?? Path.GetFileNameWithoutExtension(opt.InputFile));
+					else if ( Path.GetExtension(opt.InputFile).EqualsNoCase(".csv") )
+						loadCsvToElastic(opt.InputFile, opt.Url, opt.Database, opt.Collection ?? Path.GetFileNameWithoutExtension(opt.InputFile));
+					else if ( Path.GetExtension(opt.InputFile).EqualsNoCase(".xml") )
+						loadXmlToElastic(opt.InputFile, opt.Url, opt.Database, opt.Collection ?? Path.GetFileNameWithoutExtension(opt.InputFile));
+					else
+						throw new NotSupportedException("Not supported file format");
 					break;
 
 				case "load-ttl-neo4j":

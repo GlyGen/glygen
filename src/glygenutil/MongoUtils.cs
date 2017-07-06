@@ -1,6 +1,9 @@
 ﻿using ChemSpider.Molecules;
+using ChemSpider.Utilities;
+using CsvHelper;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -9,6 +12,8 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Xml.Linq;
+using System.Xml.XPath;
 
 namespace glygenutil
 {
@@ -29,7 +34,9 @@ namespace glygenutil
 
 				reader
 					.Records
+#if !DEBUG
 					.AsParallel()
+#endif
 					.ForAll(r => {
 						if ( r.Molecule != null ) {
 							docs.Add(r.ToBsonDocument());
@@ -65,29 +72,30 @@ namespace glygenutil
 			int counter = 0;
 			ConcurrentBag<BsonDocument> docs = new ConcurrentBag<BsonDocument>();
 
-			using ( SdfReader reader = new SdfReader(inputFile) ) {
-				Console.Out.WriteLine("Converting using {0} threads", Environment.ProcessorCount);
+			using ( var tr = new StreamReader(inputFile) )
+			using ( var cr = new CsvReader(tr, new CsvHelper.Configuration.CsvConfiguration { HasHeaderRecord = true }) ) {
+				cr.Read();
+				while ( cr.Read() ) {
+					var bson = new BsonDocument();
+					foreach ( var h in cr.FieldHeaders ) {
+						bson.Add(h, cr.GetField<string>(h));
+					}
 
-				reader
-					.Records
-					.AsParallel()
-					.ForAll(r => {
-						if ( r.Molecule != null ) {
-							docs.Add(r.ToBsonDocument());
-							lock ( _lock ) {
-								counter++;
+					docs.Add(bson);
 
-								if ( docs.Count == 1000 ) {
-									col.InsertMany(docs);
-									docs = new ConcurrentBag<BsonDocument>();
+					lock ( _lock ) {
+						counter++;
 
-									Console.Out.Write(".");
-									if ( counter % 10000 == 0 )
-										Console.Out.Write(counter);
-								}
-							}
+						if ( docs.Count == 1000 ) {
+							col.InsertMany(docs);
+							docs = new ConcurrentBag<BsonDocument>();
+
+							Console.Out.Write(".");
+							if ( counter % 10000 == 0 )
+								Console.Out.Write(counter);
 						}
-					});
+					}
+				}
 
 				if ( docs.Count > 0 )
 					col.InsertMany(docs);
@@ -96,7 +104,7 @@ namespace glygenutil
 			}
 		}
 
-		private static void loadXmlToMongo(string inputFile, string url, string database, string collection)
+		private static void loadXmlToMongo(string inputFile, string url, string database, string collection, string element)
 		{
 			MongoUrl u = new MongoUrl(url ?? ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString);
 			MongoClient client = new MongoClient(u);
@@ -106,35 +114,33 @@ namespace glygenutil
 			int counter = 0;
 			ConcurrentBag<BsonDocument> docs = new ConcurrentBag<BsonDocument>();
 
-			using ( SdfReader reader = new SdfReader(inputFile) ) {
-				Console.Out.WriteLine("Converting using {0} threads", Environment.ProcessorCount);
+			XDocument xdoc = XDocument.Load(inputFile);
+			xdoc
+				.XPathSelectElements(element)
+				.ForAll(x => {
+					if ( !String.IsNullOrWhiteSpace(x.Value) ) {
+						string json = JsonConvert.SerializeXNode(x);
+						BsonDocument bson = BsonDocument.Parse(json);
+						docs.Add(bson);
+						lock ( _lock ) {
+							counter++;
 
-				reader
-					.Records
-					.AsParallel()
-					.ForAll(r => {
-						if ( r.Molecule != null ) {
-							docs.Add(r.ToBsonDocument());
-							lock ( _lock ) {
-								counter++;
+							if ( docs.Count == 1000 ) {
+								col.InsertMany(docs);
+								docs = new ConcurrentBag<BsonDocument>();
 
-								if ( docs.Count == 1000 ) {
-									col.InsertMany(docs);
-									docs = new ConcurrentBag<BsonDocument>();
-
-									Console.Out.Write(".");
-									if ( counter % 10000 == 0 )
-										Console.Out.Write(counter);
-								}
+								Console.Out.Write(".");
+								if ( counter % 10000 == 0 )
+									Console.Out.Write(counter);
 							}
 						}
-					});
+					}
+				});
 
-				if ( docs.Count > 0 )
-					col.InsertMany(docs);
+			if ( docs.Count > 0 )
+				col.InsertMany(docs);
 
-				Console.Out.WriteLine("{0} records inserted", counter);
-			}
+			Console.Out.WriteLine("{0} records inserted", counter);
 		}
 	}
 }
