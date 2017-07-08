@@ -59,6 +59,7 @@
     <Compile Include="BingoTests.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="App.config" />
     <None Include="Mongo.loadtest">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

@@ -8,6 +8,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -19,17 +20,17 @@ namespace glygenutil
 {
 	partial class Program
 	{
-		private static void loadSdfToMongo(string inputFile, string url, string database, string collection)
+		private static void loadSdfToMongo(Options opt)
 		{
-			MongoUrl u = new MongoUrl(url ?? ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString);
+			MongoUrl u = new MongoUrl(opt.Url ?? ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString);
 			MongoClient client = new MongoClient(u);
-			var db = client.GetDatabase(database ?? u.DatabaseName ?? ConfigurationManager.AppSettings["DefaultDatabase"]);
-			var col = db.GetCollection<BsonDocument>(collection ?? ConfigurationManager.AppSettings["DefaultCollection"] ?? Path.GetFileNameWithoutExtension(inputFile));
+			var db = client.GetDatabase(opt.Database ?? u.DatabaseName ?? ConfigurationManager.AppSettings["DefaultDatabase"]);
+			var col = db.GetCollection<BsonDocument>(opt.Collection ?? ConfigurationManager.AppSettings["DefaultCollection"] ?? Path.GetFileNameWithoutExtension(opt.InputFile));
 
 			int counter = 0;
 			ConcurrentBag<BsonDocument> docs = new ConcurrentBag<BsonDocument>();
 
-			using ( SdfReader reader = new SdfReader(inputFile) ) {
+			using ( SdfReader reader = new SdfReader(opt.InputFile) ) {
 				Console.Out.WriteLine("Converting using {0} threads", Environment.ProcessorCount);
 
 				reader
@@ -62,17 +63,17 @@ namespace glygenutil
 			}
 		}
 
-		private static void loadCsvToMongo(string inputFile, string url, string database, string collection)
+		private static void loadCsvToMongo(Options opt)
 		{
-			MongoUrl u = new MongoUrl(url ?? ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString);
+			MongoUrl u = new MongoUrl(opt.Url ?? ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString);
 			MongoClient client = new MongoClient(u);
-			var db = client.GetDatabase(database ?? u.DatabaseName ?? ConfigurationManager.AppSettings["DefaultDatabase"]);
-			var col = db.GetCollection<BsonDocument>(collection ?? ConfigurationManager.AppSettings["DefaultCollection"] ?? Path.GetFileNameWithoutExtension(inputFile));
+			var db = client.GetDatabase(opt.Database ?? u.DatabaseName ?? ConfigurationManager.AppSettings["DefaultDatabase"]);
+			var col = db.GetCollection<BsonDocument>(opt.Collection ?? ConfigurationManager.AppSettings["DefaultCollection"] ?? Path.GetFileNameWithoutExtension(opt.InputFile));
 
 			int counter = 0;
 			ConcurrentBag<BsonDocument> docs = new ConcurrentBag<BsonDocument>();
 
-			using ( var tr = new StreamReader(inputFile) )
+			using ( var tr = new StreamReader(opt.InputFile) )
 			using ( var cr = new CsvReader(tr, new CsvHelper.Configuration.CsvConfiguration { HasHeaderRecord = true }) ) {
 				cr.Read();
 				while ( cr.Read() ) {
@@ -104,43 +105,50 @@ namespace glygenutil
 			}
 		}
 
-		private static void loadXmlToMongo(string inputFile, string url, string database, string collection, string element)
+		private static void loadXmlToMongo(Options opt)
 		{
-			MongoUrl u = new MongoUrl(url ?? ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString);
+			MongoUrl u = new MongoUrl(opt.Url ?? ConfigurationManager.ConnectionStrings["DefaultConnection"].ConnectionString);
 			MongoClient client = new MongoClient(u);
-			var db = client.GetDatabase(database ?? u.DatabaseName ?? ConfigurationManager.AppSettings["DefaultDatabase"]);
-			var col = db.GetCollection<BsonDocument>(collection ?? ConfigurationManager.AppSettings["DefaultCollection"] ?? Path.GetFileNameWithoutExtension(inputFile));
+			var db = client.GetDatabase(opt.Database ?? u.DatabaseName ?? ConfigurationManager.AppSettings["DefaultDatabase"]);
+			var col = db.GetCollection<BsonDocument>(opt.Collection ?? ConfigurationManager.AppSettings["DefaultCollection"] ?? Path.GetFileNameWithoutExtension(opt.InputFile));
 
-			int counter = 0;
-			ConcurrentBag<BsonDocument> docs = new ConcurrentBag<BsonDocument>();
+			XDocument xdoc = XDocument.Load(opt.InputFile);
+			for ( int i = 0; i < opt.Repeat; i++ )
+			{
+				int counter = 0;
+				ConcurrentBag<BsonDocument> docs = new ConcurrentBag<BsonDocument>();
+				using ( var b = new Benchmark("load-xml-mongo") ) {
+					xdoc
+						.XPathSelectElements(opt.Element)
+						.AsParallel()
+						.WithDegreeOfParallelism(opt.Threads)
+						.ForAll(x => {
+							if ( !String.IsNullOrWhiteSpace(x.Value) ) {
+								string json = JsonConvert.SerializeXNode(x);
+								BsonDocument bson = BsonDocument.Parse(json);
+								docs.Add(bson);
+								lock ( _lock ) {
+									counter++;
 
-			XDocument xdoc = XDocument.Load(inputFile);
-			xdoc
-				.XPathSelectElements(element)
-				.ForAll(x => {
-					if ( !String.IsNullOrWhiteSpace(x.Value) ) {
-						string json = JsonConvert.SerializeXNode(x);
-						BsonDocument bson = BsonDocument.Parse(json);
-						docs.Add(bson);
-						lock ( _lock ) {
-							counter++;
+									if ( docs.Count == 1000 ) {
+										col.InsertMany(docs);
+										docs = new ConcurrentBag<BsonDocument>();
 
-							if ( docs.Count == 1000 ) {
-								col.InsertMany(docs);
-								docs = new ConcurrentBag<BsonDocument>();
-
-								Console.Out.Write(".");
-								if ( counter % 10000 == 0 )
-									Console.Out.Write(counter);
+										Console.Out.Write(".");
+										if ( counter % 10000 == 0 )
+											Console.Out.Write(counter);
+									}
+								}
 							}
-						}
-					}
-				});
+						});
 
-			if ( docs.Count > 0 )
-				col.InsertMany(docs);
+						if ( docs.Count > 0 )
+							col.InsertMany(docs);
 
-			Console.Out.WriteLine("{0} records inserted", counter);
+				}
+
+				Console.Out.Write("{0} records inserted", counter);
+			}
 		}
 	}
 }

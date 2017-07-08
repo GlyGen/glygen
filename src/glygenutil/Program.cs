@@ -47,6 +47,12 @@ namespace glygenutil
 		[Option('e', "element", Required = false, HelpText = "Document-defining XML element")]
 		public string Element { get; set; }
 
+		[Option('r', "repeat", Required = false, HelpText = "Repeat load that many times (with the same data)")]
+		public int Repeat { get; set; } = 1;
+
+		[Option('t', "threads", Required = false, HelpText = "Number of parallel threads to use for loading")]
+		public int Threads { get; set; } = Environment.ProcessorCount;
+
 		[HelpOption]
 		public string GetUsage()
 		{
@@ -71,11 +77,11 @@ namespace glygenutil
 			switch ( opt.Command ) {
 				case "load-mongo":
 					if ( Path.GetExtension(opt.InputFile).EqualsNoCase(".sdf") )
-						loadSdfToMongo(opt.InputFile, opt.Url, opt.Database, opt.Collection ?? Path.GetFileNameWithoutExtension(opt.InputFile));
+						loadSdfToMongo(opt);
 					else if ( Path.GetExtension(opt.InputFile).EqualsNoCase(".csv") )
-						loadCsvToMongo(opt.InputFile, opt.Url, opt.Database, opt.Collection ?? Path.GetFileNameWithoutExtension(opt.InputFile));
+						loadCsvToMongo(opt);
 					else if ( Path.GetExtension(opt.InputFile).EqualsNoCase(".xml") )
-						loadXmlToMongo(opt.InputFile, opt.Url, opt.Database, opt.Collection ?? Path.GetFileNameWithoutExtension(opt.InputFile), opt.Element);
+						loadXmlToMongo(opt);
 					else
 						throw new NotSupportedException("Not supported file format");
 					break;
